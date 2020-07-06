@@ -298,6 +298,7 @@ static Translator *NewTranslator(void)
 	tr->langopts.param2[LOPT_BRACKET_PAUSE] = 2; // pauses when announcing bracket names
 	tr->langopts.max_initial_consonants = 3;
 	tr->langopts.replace_chars = NULL;
+	tr->langopts.preplace_chars = NULL;
 	tr->langopts.alt_alphabet_lang = L('e', 'n');
 	tr->langopts.roman_suffix = utf8_null;
 

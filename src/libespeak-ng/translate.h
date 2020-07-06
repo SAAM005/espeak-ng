@@ -179,8 +179,9 @@ extern "C"
 #define RULE_LETTERGP     17 // A B C H F G Y   letter group number
 #define RULE_LETTERGP2    18 // L + letter group number
 #define RULE_CAPITAL      19 // !   word starts with a capital letter
-#define RULE_REPLACEMENTS 20 // section for character replacements
+#define RULE_REPLACEMENTS 20 // section for in-character replacements
 #define RULE_SYLLABLE     21 // @
+#define RULE_PREPLACEMENTS 22 // section for character pre-replacement in buffer
 #define RULE_SKIPCHARS    23 // J
 #define RULE_NO_SUFFIX    24 // N
 #define RULE_NOTVOWEL     25 // K
@@ -537,6 +538,7 @@ typedef struct {
 	char dotless_i;         // uses letter U+0131
 	int listx;    // compile *_listx after *list
 	const unsigned char *replace_chars;      // characters to be substitutes
+	const unsigned char *preplace_chars;      // characters to be pre-placed
 	int our_alphabet;           // offset for main alphabet (if not set in letter_bits_offset)
 	int alt_alphabet;       // offset for another language to recognize
 	int alt_alphabet_lang;  // language for the alt_alphabet

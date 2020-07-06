@@ -61,6 +61,337 @@ static int error_need_dictionary = 0;
 //         uint8_t length;
 //         char contents[length];
 //     };
+
+
+// ================================================================================
+#include <stdarg.h>
+#define UCHAR_BUFF 26 // buffer size for 3 × 8 bytes + space + 1
+#define RANGE_BUFF 25 // buffer size for byte of range function
+
+static int traceLogCount;
+static int traceLevel = 4;
+
+static void trace(const int level, const char * format, ...);
+static void tracefile(int level, char *filename, int filenamesize, FILE *file);
+static char *charToBin(const char x);
+static char *printChar(unsigned const char *from);
+static char *getUchar(int *used, unsigned const char *from);
+static char *printRange(const char *from, const int rfrom, const int rto);
+static char *printAround(const char *from, const int range);
+static char *printTill(const char *from, const int range);
+static char *intToBin(const int x);
+static int is_utf8(unsigned char *str, size_t len);
+
+static void trace(const int level, const char * format, ...) {
+	if (level <= traceLevel) {
+		char pad[20] = { "" };
+		for (int i = 0; i < level; i++)
+			strcat(pad, "⏵");
+		traceLogCount++;
+		va_list args;
+		va_start(args, format);
+		fprintf(stderr, "%s %d. ", pad, traceLogCount);
+		vfprintf(stderr, format, args);
+		va_end(args);
+	}
+}
+
+static void tracefile(int level, char *filename, int filenamesize, FILE *file ) {
+    char path[1024];
+    char result[1024];
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+    fflush(file);
+    fflush(stdout);
+    fflush(stderr);
+    int fd = fileno(file);
+    /* Read out the link to our file descriptor. */
+    sprintf(path, "/proc/self/fd/%d", fd);
+    memset(result, 0, sizeof(result));
+    readlink(path, result, sizeof(result)-1);
+
+    // Do pause
+	if (memcmp(result, filename, filenamesize) == 0) {
+	    /* Print the result. */
+	    //trace(level, "filename:%s\n", filename);
+		//trace(level, "Paused\n");
+		getchar();
+	}
+}
+
+static void pause(int level) {
+	//trace(level,"Paused\n");
+	getchar();
+}
+
+static char *charToBin(const char x) {
+	size_t bits = sizeof(char) * 8;
+	char * str = malloc(bits + 1);
+	if (!str)
+		return 0;
+	str[bits] = 0;
+	// type punning because signed shift is implementation-defined
+	unsigned u = *(unsigned *) &x;
+	for (; bits--; u >>= 1)
+		str[bits] = u & 1 ? '1' : '0';
+	return str;
+}
+
+static char *printChar(unsigned const char *from) {
+	char *result = malloc(UCHAR_BUFF);
+	memset(result, 0, UCHAR_BUFF);
+	// print null byte as dots for better readability
+	if (*from == 0) {
+		strncpy(result, "␀␀", 6);
+	} else if
+	// control bytes, first byte or remaining byte of UTF-8
+	(((*from & 0b11100000) == 0) || (*from == 0xFF) || (*from == 0x7f)
+			|| ((*from & 0b11000000) == 0b11000000)
+			|| ((*from & 0b10000000) == 0b10000000 && (*from & 0b01000000) == 0)) {
+		// as Hex code
+		snprintf(result, 3, "%02x", *from);
+	} else {
+		// or as character
+		strncpy(result, from, 1);
+		strncat(result, "␠", 3);
+	}
+	return result;
+}
+
+static char *getUchar(int *used, unsigned const char *from) {
+	// reset result string
+	char *result = malloc(UCHAR_BUFF);
+	memset(result, 0, UCHAR_BUFF);
+
+	// Count number of necessary bytes by
+	// checking for leading UTF-8 bit mask
+	int i = 0;
+
+	// if control byte or remaining byte of UTF-8
+	if (((*from & 0b11100000) == 0) || (*from == 0xFF) || (*from == 0x7f)
+			|| ((*from & 0b10000000) == 0b10000000 && (*from & 0b01000000) == 0)) {
+		*used = 1;
+		return printChar(from);
+	}
+
+	// else get number of suspected UTF-8 bytes
+	if ((*from & 0b11000000) == 0b11000000 && (*from & 0b0010000) == 0)
+		i = 1;
+	if ((*from & 0b11100000) == 0b11100000 && (*from & 0b00010000) == 0)
+		i = 2;
+	if ((*from & 0b11110000) == 0b11110000 && (*from & 0b00001000) == 0)
+		i = 3;
+
+	// Temporary buffer for UTF-8 bytes
+	unsigned char tmp[i + 2];
+	memset(&tmp, 0, i + 2);
+
+	// add expected bytes
+	for (int j = 0; j <= i; j++)
+		tmp[j] = from[j];
+
+	if (is_utf8(&tmp, i + 1) == 0) {
+		// Add read bytes
+		strncat(result, tmp, i + 1);
+		// and add padding for collected bytes
+		for (int j = 0; j <= i * 2; j++) {
+			strncat(result, "␠", 3);
+		}
+		*used = i + 1;
+		return result;
+	} else {
+		// if gathering UTF-8 bytes filed, just print out next byte
+		*used = 1;
+		return printChar(from);
+	}
+}
+
+static char *printRange(const char *from, const int rfrom, const int rto) {
+	int k = 0;
+	int i;
+	int max = (RANGE_BUFF * (rto - rfrom)) + RANGE_BUFF;
+	char *str = malloc(max);
+	memset(str, 0, max);
+	from = from + rfrom;
+	for (i = rfrom; i <= rto; i++) {
+		if (i == 0)
+			strcat(str, "┝");
+		strcat(str, getUchar(&k, from));
+		if (i == 0)
+			strcat(str, "┥");
+		from = from + k;
+	}
+	// TODO should check string again, as it can have accidentally wrong UTF-8 bytes
+	return str;
+}
+
+static char *printAround(const char *from, const int range) {
+	return printRange(from, -range, range);
+}
+
+static char *printTill(const char *from, const int range) {
+	return printRange(from, 0, range);
+}
+
+static char *intToBin(const int x) {
+	size_t bits = sizeof(int) * 8;
+	char * str = malloc(bits + 1);
+	if (!str)
+		return 0;
+	str[bits] = 0;
+	// type punning because signed shift is implementation-defined
+	unsigned u = *(unsigned *) &x;
+	for (; bits--; u >>= 1)
+		str[bits] = u & 1 ? '1' : '0';
+	return str;
+}
+
+/*
+ Check if the given unsigned char * is a valid utf-8 sequence.
+ Return value : the first erroneous byte position
+ */
+static int is_utf8(unsigned char *str, size_t len) {
+	size_t i = 0;
+	int faulty_bytes = 0;
+	while (i < len) {
+		if (str[i] <= 0x7F) { /* 00..7F */
+			i += 1;
+		} else if (str[i] >= 0xC2 && str[i] <= 0xDF) { /* C2..DF 80..BF */
+			if (i + 1 < len) { /* Expect a 2nd byte */
+				if (str[i + 1] < 0x80 || str[i + 1] > 0xBF) {
+					faulty_bytes = 2;
+					return faulty_bytes;
+				}
+			} else {
+				faulty_bytes = 1;
+				return faulty_bytes;
+			}
+			i += 2;
+		} else if (str[i] == 0xE0) { /* E0 A0..BF 80..BF */
+			if (i + 2 < len) { /* Expect a 2nd and 3rd byte */
+				if (str[i + 1] < 0xA0 || str[i + 1] > 0xBF) {
+					faulty_bytes = 2;
+					return faulty_bytes;
+				}
+				if (str[i + 2] < 0x80 || str[i + 2] > 0xBF) {
+					faulty_bytes = 3;
+					return faulty_bytes;
+				}
+			} else {
+				faulty_bytes = 1;
+				return faulty_bytes;
+			}
+			i += 3;
+		} else if (str[i] >= 0xE1 && str[i] <= 0xEC) { /* E1..EC 80..BF 80..BF */
+			if (i + 2 < len) { /* Expect a 2nd and 3rd byte */
+				if (str[i + 1] < 0x80 || str[i + 1] > 0xBF) {
+					faulty_bytes = 2;
+					return faulty_bytes;
+				}
+				if (str[i + 2] < 0x80 || str[i + 2] > 0xBF) {
+					faulty_bytes = 3;
+					return faulty_bytes;
+				}
+			} else {
+				faulty_bytes = 1;
+				return faulty_bytes;
+			}
+			i += 3;
+		} else if (str[i] == 0xED) { /* ED 80..9F 80..BF */
+			if (i + 2 < len) { /* Expect a 2nd and 3rd byte */
+				if (str[i + 1] < 0x80 || str[i + 1] > 0x9F) {
+					faulty_bytes = 2;
+					return faulty_bytes;
+				}
+				if (str[i + 2] < 0x80 || str[i + 2] > 0xBF) {
+					faulty_bytes = 3;
+					return faulty_bytes;
+				}
+			} else {
+				faulty_bytes = 1;
+				return faulty_bytes;
+			}
+			i += 3;
+		} else if (str[i] >= 0xEE && str[i] <= 0xEF) { /* EE..EF 80..BF 80..BF */
+			if (i + 2 < len) { /* Expect a 2nd and 3rd byte */
+				if (str[i + 1] < 0x80 || str[i + 1] > 0xBF) {
+					faulty_bytes = 2;
+					return faulty_bytes;
+				}
+				if (str[i + 2] < 0x80 || str[i + 2] > 0xBF) {
+					faulty_bytes = 3;
+					return faulty_bytes;
+				}
+			} else {
+				faulty_bytes = 1;
+				return faulty_bytes;
+			}
+			i += 3;
+		} else if (str[i] == 0xF0) { /* F0 90..BF 80..BF 80..BF */
+			if (i + 3 < len) { /* Expect a 2nd, 3rd 3th byte */
+				if (str[i + 1] < 0x90 || str[i + 1] > 0xBF) {
+					faulty_bytes = 2;
+					return faulty_bytes;
+				}
+				if (str[i + 2] < 0x80 || str[i + 2] > 0xBF) {
+					faulty_bytes = 3;
+					return faulty_bytes;
+				}
+				if (str[i + 3] < 0x80 || str[i + 3] > 0xBF) {
+					faulty_bytes = 4;
+					return faulty_bytes;
+				}
+			} else {
+				faulty_bytes = 1;
+				return faulty_bytes;
+			}
+			i += 4;
+		} else if (str[i] >= 0xF1 && str[i] <= 0xF3) { /* F1..F3 80..BF 80..BF 80..BF */
+			if (i + 3 < len) { /* Expect a 2nd, 3rd 3th byte */
+				if (str[i + 1] < 0x80 || str[i + 1] > 0xBF) {
+					faulty_bytes = 2;
+					return faulty_bytes;
+				}
+				if (str[i + 2] < 0x80 || str[i + 2] > 0xBF) {
+					faulty_bytes = 3;
+					return faulty_bytes;
+				}
+				if (str[i + 3] < 0x80 || str[i + 3] > 0xBF) {
+					faulty_bytes = 4;
+					return faulty_bytes;
+				}
+			} else {
+				faulty_bytes = 1;
+				return faulty_bytes;
+			}
+			i += 4;
+		} else if (str[i] == 0xF4) { /* F4 80..8F 80..BF 80..BF */
+			if (i + 3 < len) { /* Expect a 2nd, 3rd 3th byte */
+				if (str[i + 1] < 0x80 || str[i + 1] > 0x8F) {
+					faulty_bytes = 2;
+					return faulty_bytes;
+				}
+				if (str[i + 2] < 0x80 || str[i + 2] > 0xBF) {
+					faulty_bytes = 3;
+					return faulty_bytes;
+				}
+				if (str[i + 3] < 0x80 || str[i + 3] > 0xBF) {
+					faulty_bytes = 4;
+					return faulty_bytes;
+				}
+			} else {
+				faulty_bytes = 1;
+				return faulty_bytes;
+			}
+			i += 4;
+		} else {
+			faulty_bytes = 1;
+			return faulty_bytes;
+		}
+	}
+	return 0;
+}
+// =======================================================================================
 static char *hash_chains[N_HASH_DICT];
 
 static char letterGroupsDefined[N_LETTER_GROUPS];
@@ -1390,6 +1721,17 @@ static espeak_ng_STATUS compile_dictrules(FILE *f_in, FILE *f_out, char *fname_t
 					fputc(0, f_out);
 			}
 
+			if (memcmp(buf, ".preplace", 9) == 0) {
+				fprintf(stderr, ".preplace\n");
+				compile_mode = 2; // works similarly to .replace
+				fputc(RULE_GROUP_START, f_out);
+				fputc(RULE_PREPLACEMENTS, f_out);
+
+				// advance to next word boundary
+				while ((ftell(f_out) & 3) != 0)
+					fputc(0, f_out);
+			}
+
 			if (memcmp(buf, ".group", 6) == 0) {
 				compile_mode = 1;
 
@@ -1448,6 +1790,7 @@ static espeak_ng_STATUS compile_dictrules(FILE *f_in, FILE *f_out, char *fname_t
 			}
 			break;
 		case 2: //  .replace
+			fprintf(stderr,"2\n");
 			p = (unsigned char *)buf;
 
 			while (isspace2(*p)) p++;
@@ -1462,6 +1805,8 @@ static espeak_ng_STATUS compile_dictrules(FILE *f_in, FILE *f_out, char *fname_t
 				while ((unsigned char)(*p) > 0x20) {
 					fputc(*p, f_out);
 					p++;
+					fprintf(stderr,printAround(p, 10));
+					fprintf(stderr,"\n");
 				}
 				fputc(0, f_out);
 			}

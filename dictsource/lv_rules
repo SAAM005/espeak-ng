@@ -2,6 +2,12 @@
 // This file is UTF-8 encoded
 // ?2 — pronunciation rules for Latgalian
 
+.preplace
+      a    ā
+      b    c
+      č   de
+      ē   fg
+
 .replace
       ó    ȯ                    // replace o-acute with o-dot, as it is more logical for "short o"
       ḩ    h
