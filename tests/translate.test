@@ -7,7 +7,7 @@ test_phonemes() {
 
 	echo "testing ${TEST_LANG} \"${TEST_TEXT}\""
 	ESPEAK_DATA_PATH=`pwd` LD_LIBRARY_PATH=src:${LD_LIBRARY_PATH} \
-		src/espeak-ng -xq -v ${TEST_LANG} "${TEST_TEXT}" > actual.txt
+		src/espeak-ng -xq -v ${TEST_LANG} -- "${TEST_TEXT}" > actual.txt
 	echo "${EXPECTED}" > expected.txt
 	diff expected.txt actual.txt || exit 1
 }
@@ -86,3 +86,7 @@ test_phonemes en "r'oUlIN 0nD@ fl'o@ l'aafIN" "🤣" # skip words
 # bug: https://github.com/espeak-ng/espeak-ng/issues/471
 test_phonemes sk "sm'eju:tsa s'a tv'a:R" "☺"
 test_phonemes sk "bl'ax sm'eju:tsa s'a tv'a:R" "blah ☺"
+
+
+# bug: https://github.com/espeak-ng/espeak-ng/issues/831
+test_phonemes hi "l@c#:'e:d" "---लच्छेद"
