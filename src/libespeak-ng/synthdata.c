@@ -177,6 +177,19 @@ int PhonemeCode(unsigned int mnem)
 	return 0;
 }
 
+int PhonemeMnem(unsigned const char code)
+{
+	   int ix;
+
+	   for (ix = 0; ix < n_phoneme_tab; ix++) {
+			   if (phoneme_tab[ix] == NULL)
+					   continue;
+			   if (phoneme_tab[ix]->code == code)
+					   return phoneme_tab[ix]->mnemonic;
+	   }
+	   return 0;
+}
+
 int LookupPhonemeString(const char *string)
 {
 	int ix;
@@ -829,6 +842,10 @@ void InterpretPhoneme(Translator *tr, int control, PHONEME_LIST *plist, PHONEME_
 				phdata->pd_param[instn2] = data;
 				if ((instn2 == i_CHANGE_PHONEME) && (control & 0x100)) {
 					// found ChangePhoneme() in PhonemeList mode, exit
+					if (option_phonemes & espeakPHONEMES_TRACE) {
+						fprintf(f_trans, "ChangePhoneme: %s > ", WordToString(ph->mnemonic));
+						fprintf(f_trans, "%s\n", WordToString(PhonemeMnem(data)));
+					}
 					end_flag = 1;
 				}
 			} else
